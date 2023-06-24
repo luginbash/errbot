@@ -248,6 +248,8 @@ class TelegramBackend(ErrBot):
                         log.warning("Unknown update type (no message present)")
                         continue
                     try:
+                        if hasattr(update.message,'reply_to_message'):
+                            update.message.parent = update.message.reply_to_message
                         self._handle_message(update.message)
                     except Exception:
                         log.exception("An exception occurred while processing update")
@@ -261,17 +263,13 @@ class TelegramBackend(ErrBot):
             log.debug("Triggering disconnect callback")
             self.disconnect_callback()
 
-    def _handle_message(self, message: Message) -> None:
+    def _build_message(self, message: Message) -> Message:
         """
-        Handle a received message.
+        Build a message object from a Telegram message
 
-        :param message:
-            A message with a structure as defined at
-            https://core.telegram.org/bots/api#message
+        :param message: The Telegram message
+        :return: A message instance
         """
-        if message.text is None:
-            log.warning("Unhandled message type (not a text message) ignored")
-            return
 
         message_instance = self.build_message(message.text)
         if message.chat["type"] == "private":
@@ -293,6 +291,25 @@ class TelegramBackend(ErrBot):
             )
             message_instance.to = room
         message_instance.extras["message_id"] = message.message_id
+        return message_instance
+
+    def _handle_message(self, message: Message) -> None:
+        """
+        Handle a received message.
+
+        :param message:
+            A message with a structure as defined at
+            https://core.telegram.org/bots/api#message
+        """
+
+        if message.text is None:
+            log.warning("Unhandled message type (not a text message) ignored")
+            return
+
+        message_instance = self._build_message(message)
+        if message.parent and message.parent.text:
+            message_instance.parent = self._build_message(message.parent)
+
         self.callback_message(message_instance)
 
     def send_message(self, msg: Message) -> None:
